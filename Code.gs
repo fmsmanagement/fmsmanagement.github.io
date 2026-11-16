@@ -357,20 +357,14 @@ function registerDealer(data) {
   const nomineeSheet = getSheet(masterSS, "DealerNominee");
   const usersSheet = getSheet(masterSS, "Users");
 
-  // ০. ডিলারের Gmail আবশ্যক — ডিলারের শীট এই Gmail-এর জন্যই তৈরি হয়,
-  //    ডিপুর নিজের Drive-এ থেকে যায় না
+  // ০. Gmail শুধু তথ্য হিসেবে সংরক্ষণ হবে (ঐচ্ছিক) — এই ইমেইলে কোনো শীট তৈরি/শেয়ার হবে না
   const dealerGmail = String(data.gmail || "").trim();
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(dealerGmail)) {
-    return { success: false, message: "ডিলারের Gmail দিন — এই Gmail-এই ডিলারের Google শীট তৈরি হবে" };
+  if (dealerGmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(dealerGmail)) {
+    return { success: false, message: "Gmail/ইমেইলের ফরম্যাট সঠিক নয়" };
   }
 
-  // ১. টেমপ্লেট কপি করে নতুন Spreadsheet বানানো (Spreadsheet ID স্বয়ংক্রিয় তৈরি হয়)
-  const templateFile = DriveApp.getFileById(TEMPLATE_SS_ID);
-  const newFile = templateFile.makeCopy(data.নাম + " - Dealer Sheet");
-  const newSpreadsheetId = newFile.getId();
-
-  // ২. শীটের মালিকানা ডিলারের Gmail-এ পাঠানো
-  const handover = handOverSheetToDealer(newSpreadsheetId, dealerGmail);
+  // ১. ডিলারের জন্য আলাদা Google শীট তৈরি করা হয় না (SpreadsheetID ফাঁকা থাকবে)
+  const newSpreadsheetId = "";
 
   // ৩. Dealer আইডি তৈরি
   const dealerId = generateId(dealersSheet, "D");
@@ -392,7 +386,7 @@ function registerDealer(data) {
     data.পিতারনাম,
     data.nid,
     data.mobile,
-    data.gmail || "",
+    dealerGmail,
     data.tradeLicense,
     data.thikana,
     dealerPhotoUrl,
@@ -458,7 +452,7 @@ function registerDealer(data) {
     success: true,
     dealerId: dealerId,
     spreadsheetId: newSpreadsheetId,
-    message: "ডিলার সফলভাবে রেজিস্ট্রেশন হয়েছে। " + handover.message + photoWarning
+    message: "ডিলার সফলভাবে রেজিস্ট্রেশন হয়েছে।" + photoWarning
   };
 }
 

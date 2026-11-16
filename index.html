@@ -1480,7 +1480,7 @@ function renderRegisterForm(box){
         <div class="field"><label>ডিলারের নাম</label><input id="rNaam"></div>
         <div class="field"><label>পিতার নাম</label><input id="rPitarNaam"></div>
         <div class="field"><label>মোবাইল নং</label><input id="rMobile" maxlength="11"></div>
-        <div class="field"><label>Gmail (আবশ্যক)</label><input id="rGmail" type="email"></div>
+        <div class="field"><label>Gmail (ঐচ্ছিক)</label><input id="rGmail" type="email"></div>
         <div class="field"><label>NID/জন্মসনদ নং</label><input id="rNid"></div>
         <div class="field"><label>ট্রেড লাইসেন্স নং</label><input id="rTrade"></div>
         <div class="field"><label>এরিয়া</label><input id="rArea" placeholder="যেমন: ৮নং আমিরাবাদ ইউনিয়ন"></div>
@@ -1625,10 +1625,6 @@ async function submitRegister(){
     }
   };
 
-  if(!data["gmail"]){
-    msgBox.textContent = "ডিলারের Gmail দিন — এই Gmail-এই ডিলারের Google শীট তৈরি হবে"; msgBox.className = "msg err";
-    return;
-  }
   const res = await apiCall("registerDealer", data);
   msgBox.textContent = res.message;
   msgBox.className = "msg " + (res.success ? "ok" : "err");
