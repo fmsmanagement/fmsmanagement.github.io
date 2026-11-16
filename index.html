@@ -1648,21 +1648,32 @@ async function renderDealersList(box){
     html += emptyRowHtml(8, "এখনো কোনো ডিলার রেজিস্ট্রেশন করা হয়নি");
   } else {
   res.dealers.forEach(d => {
-    const dJson = JSON.stringify(d).replace(/'/g, "&#39;");
-    const photoUrl = d["ডিলারের ছবি(URL)"] || "";
     html += `<tr>
-      <td>${photoUrl ? `<img src="${photoUrl}" class="dealer-thumb">` : "—"}</td>
+      <td class="dealer-photo-cell" data-did="${d["DealerID"]}">—</td>
       <td>${d["DealerID"]}</td><td class="cell-left">${d["নাম"]}</td><td>${telLink(d["মোবাইল"])}</td>
       <td>${d["এরিয়া"]||""}</td><td class="cell-left">${dealerAddrText(d)}</td><td>${d["স্ট্যাটাস"]}</td>
       <td class="no-print">
         <button class="btn icon small" onclick="toggleDealerStatus('${d["DealerID"]}','${d["স্ট্যাটাস"]}')" title="${d["স্ট্যাটাস"]==="সক্রিয়" ? "নিষ্ক্রিয় করুন" : "সক্রিয় করুন"}" aria-label="স্ট্যাটাস বদলান">${IC.power}</button>
         <button class="btn icon small secondary" onclick="editDealerRow('${d["DealerID"]}')" title="এডিট" aria-label="এডিট">${IC.edit}</button>
-        <button class="btn icon small secondary" onclick='printDealerRow(${dJson})' title="প্রিন্ট" aria-label="প্রিন্ট">${IC.print}</button>
+        <button class="btn icon small secondary" onclick="printDealerRow('${d["DealerID"]}')" title="প্রিন্ট" aria-label="প্রিন্ট">${IC.print}</button>
       </td></tr>`;
   });
   }
   html += `</tbody></table></div>`;
   box.innerHTML = html;
+  loadDealerThumbs(box);
+}
+
+/* ছবি পেছনে আলাদাভাবে আনা — তালিকা আগে দেখানো হয়, ছবি পরে বসে */
+async function loadDealerThumbs(box){
+  try{
+    const r = await cachedApiCall("listDealerPhotos", {}, 120000);
+    if(!r || !r.success) return;
+    box.querySelectorAll(".dealer-photo-cell").forEach(td => {
+      const src = r.photos[td.getAttribute("data-did")];
+      if(src){ const img = document.createElement("img"); img.className = "dealer-thumb"; img.src = src; td.textContent = ""; td.appendChild(img); }
+    });
+  }catch(e){}
 }
 
 async function toggleDealerStatus(dealerId, currentStatus){
@@ -1744,7 +1755,10 @@ function openDealerMgmt(){
   switchDealerMgmtTab("dealerList", null);      // শুরুতে ডিলার লিস্ট; "ডিলার রেজিস্ট্রেশন" বাটনে ফরম খোলে/বন্ধ হয়
 }
 
-function printDealerRow(d){
+async function printDealerRow(dealerId){
+  const res = await apiCall("getDealerFullInfo", { dealerId });
+  if(!res.success){ alert(res.message); return; }
+  const d = res.dealer; d.nominee = res.nominee;
   printOfficialDealerForm({
     dealerId: d["DealerID"], status: d["স্ট্যাটাস"],
     naam: d["নাম"], pitarNaam: d["পিতার নাম"], mobile: d["মোবাইল"], gmail: d["Gmail"],

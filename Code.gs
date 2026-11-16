@@ -378,26 +378,7 @@ function registerDealer(data) {
     else { dealerPhotoUrl = processed; }
   }
 
-  // ৫. Dealers ট্যাবে রো যোগ
-  dealersSheet.appendRow([
-    dealerId,
-    new Date(),
-    data.নাম,
-    data.পিতারনাম,
-    data.nid,
-    data.mobile,
-    dealerGmail,
-    data.tradeLicense,
-    data.thikana,
-    dealerPhotoUrl,
-    newSpreadsheetId,
-    "সক্রিয়",
-    data.facebookLink || "",
-    data.area || ""
-  ]);
-  dealersSheet.getRange(dealersSheet.getLastRow(), 6).setNumberFormat("@");
-
-  // ঠিকানার ৩ ঘর (ইউনিয়ন/পৌরসভা, উপজেলা, জেলা) — কলাম না থাকলে যোগ হয়, তারপর হেডার-নাম ধরে বসানো
+  // ৫. Dealers ট্যাবে রো যোগ — সব ঘর একবারেই (হেডার-নাম ধরে) লেখা হয়, তাই দ্রুত
   ensureDealerAddrCols(dealersSheet);
   const dHeaders = dealersSheet.getRange(1, 1, 1, dealersSheet.getLastColumn()).getValues()[0];
   let signProcessed = "";
@@ -406,11 +387,23 @@ function registerDealer(data) {
     if (ps === null) { photoWarning += " (⚠️ ডিলারের স্বাক্ষরের ছবি খুব বড়, সেভ হয়নি)"; }
     else { signProcessed = ps; }
   }
-  const addrVals = { "ইউনিয়ন/পৌরসভা": data.union || "", "উপজেলা": data.upozila || "", "জেলা": data.jela || "", "ডিলারের স্বাক্ষর(URL)": signProcessed };
-  Object.keys(addrVals).forEach(function (h) {
-    const ci = dHeaders.indexOf(h);
-    if (ci !== -1) dealersSheet.getRange(dealersSheet.getLastRow(), ci + 1).setValue(addrVals[h]);
-  });
+  const dealerVals = {
+    "DealerID": dealerId, "তারিখ": new Date(), "নাম": data.নাম, "পিতার নাম": data.পিতারনাম,
+    "NID/জন্মসনদ": data.nid, "মোবাইল": data.mobile, "Gmail": dealerGmail,
+    "ট্রেড লাইসেন্স নং": data.tradeLicense, "ঠিকানা": data.thikana,
+    "ডিলারের ছবি(URL)": dealerPhotoUrl, "SpreadsheetID": newSpreadsheetId, "স্ট্যাটাস": "সক্রিয়",
+    "Facebook Link": data.facebookLink || "", "এরিয়া": data.area || "",
+    "ইউনিয়ন/পৌরসভা": data.union || "", "উপজেলা": data.upozila || "", "জেলা": data.jela || "",
+    "ডিলারের স্বাক্ষর(URL)": signProcessed
+  };
+  const newRowNum = dealersSheet.getLastRow() + 1;
+  const dRow = dHeaders.map(function (h) { return dealerVals.hasOwnProperty(h) ? dealerVals[h] : ""; });
+  // মোবাইল/NID টেক্সট ফরম্যাটে (শুরুর ০ না হারাতে), তারপর একটিমাত্র কলে পুরো সারি
+  const textCols = ["NID/জন্মসনদ", "মোবাইল", "ট্রেড লাইসেন্স নং"].map(function (h) { return dHeaders.indexOf(h); })
+    .filter(function (i) { return i !== -1; })
+    .map(function (i) { return dealersSheet.getRange(newRowNum, i + 1).getA1Notation(); });
+  if (textCols.length) dealersSheet.getRangeList(textCols).setNumberFormat("@");
+  dealersSheet.getRange(newRowNum, 1, 1, dRow.length).setValues([dRow]);
 
   // ৬. ডিলারের নমিনি তথ্য যোগ (যদি দেওয়া থাকে)
   if (data.nominee) {
@@ -583,13 +576,13 @@ const IDEMPOTENT_ACTIONS = {
  * (গুগল শীটে সরাসরি হাতে এডিট করলে অ্যাপে সর্বোচ্চ ৫ মিনিট পরে দেখা যাবে)
  *******************************************************/
 const CACHEABLE_READS = {
-  agencyDashboardSummary:1, listDealers:1, listSalesInvoices:1, listPendingOrderConfirmations:1,
+  agencyDashboardSummary:1, listDealers:1, listDealerPhotos:1, listSalesInvoices:1, listPendingOrderConfirmations:1,
   listProducts:1, listStockVouchers:1, listExpenses:1, listIncomeReceipts:1, listCommissions:1,
   getAgencyInfo:1, getAbout:1, agencySalesReport:1, depotReport:1,
   listInvests:1, listCashDeposits:1, listCashWithdraws:1, cashReport:1, depotFinanceReport:1
 };
 const READ_CACHE_TTL = 300;
-const READ_CACHE_SALT = "r9";   // তালিকা/রিপোর্টের কাঠামো বদলালে এটা বদলান — পুরনো ক্যাশ আর মিলবে না
+const READ_CACHE_SALT = "r10";   // তালিকা/রিপোর্টের কাঠামো বদলালে এটা বদলান — পুরনো ক্যাশ আর মিলবে না
 
 /* সার্ভার কোডের সংস্করণ — অ্যাপের নিচে দেখায়; নতুন ভার্সন ডিপ্লয় হয়েছে কিনা বোঝার জন্য */
 const BACKEND_VERSION = "2026-11-09.depot";
@@ -785,6 +778,9 @@ function runAction(action, data) {
       // ---- ডিলার তালিকা/এডিট (শুধু মূল এজেন্সি) ----
       case "listDealers":
         result = listDealers(data);
+        break;
+      case "listDealerPhotos":
+        result = listDealerPhotos(data);
         break;
       case "updateDealerInfo":
         result = updateDealerInfo(data);

@@ -228,28 +228,80 @@ function updateAgencyInfo(data) {
 /*=========================================================
  *  ডিলার তালিকা / এডিট / স্ট্যাটাস (এজেন্সি-লেভেল)
  *=======================================================*/
+/* শীটের সারিগুলো অবজেক্ট আকারে পড়া — skipHeaders এর ভারী কলাম (base64 ছবি) বাদ দিয়ে।
+   লাগেনি এমন কলাম পাশাপাশি ব্লকে ভাগ করে কম কলে পড়া হয় */
+function readRowsLight(sheet, skipHeaders) {
+  const lastRow = sheet.getLastRow(), lastCol = sheet.getLastColumn();
+  if (lastRow < 2 || lastCol < 1) return [];
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  const keep = [];
+  headers.forEach(function (h, i) { if (skipHeaders.indexOf(h) === -1) keep.push(i); });
+  const blocks = [];
+  keep.forEach(function (ci) {
+    const last = blocks[blocks.length - 1];
+    if (last && last.end === ci - 1) last.end = ci; else blocks.push({ start: ci, end: ci });
+  });
+  const n = lastRow - 1;
+  const blockVals = blocks.map(function (b) { return sheet.getRange(2, b.start + 1, n, b.end - b.start + 1).getValues(); });
+  const rows = [];
+  for (let r = 0; r < n; r++) {
+    const obj = { rowIndex: r + 2 };
+    blocks.forEach(function (b, bi) {
+      for (let c = b.start; c <= b.end; c++) obj[headers[c]] = blockVals[bi][r][c - b.start];
+    });
+    rows.push(obj);
+  }
+  return rows;
+}
+
+/* একটি নির্দিষ্ট সারি (ছবিসহ) অবজেক্ট আকারে — শীটের বাকি সারি না পড়ে */
+function readOneRowObject(sheet, idHeader, idValue) {
+  const rowNum = genericFindRowIndex(sheet, idHeader, idValue);
+  if (rowNum === -1) return null;
+  const lastCol = sheet.getLastColumn();
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  const row = sheet.getRange(rowNum, 1, 1, lastCol).getValues()[0];
+  const obj = { rowIndex: rowNum };
+  headers.forEach(function (h, i) { obj[h] = row[i]; });
+  return obj;
+}
+
+const DEALER_HEAVY_COLS = ["ডিলারের ছবি(URL)", "ডিলারের স্বাক্ষর(URL)"];
+const NOMINEE_HEAVY_COLS = ["নমিনির ছবি(URL)"];
+
+/* তালিকায় ছবি/স্বাক্ষর (base64) পাঠানো হয় না — তাই রেসপন্স ছোট ও দ্রুত।
+   ছবি আলাদাভাবে listDealerPhotos দিয়ে পেছনে আসে; প্রিন্ট/এডিটে getDealerFullInfo ছবিসহ দেয় */
 function listDealers(data) {
   const perm = checkAgencyPermission(data.token);
   if (!perm.ok) return { success: false, message: perm.message };
 
-  const cache = CacheService.getScriptCache();
-  const cached = cache.get("dealers_cache_v1");
-  if (cached) return { success: true, dealers: JSON.parse(cached) };
-
   const masterSS = getMasterSS();
-  const dealersSheet = getDealersSheet(masterSS);
-  const nomineeSheet = getSheet(masterSS, "DealerNominee");
+  const dealers = readRowsLight(getDealersSheet(masterSS), DEALER_HEAVY_COLS);
+  const nominees = readRowsLight(getSheet(masterSS, "DealerNominee"), NOMINEE_HEAVY_COLS);
 
-  const dealers = genericListRows(dealersSheet);
-  const nominees = genericListRows(nomineeSheet);
-
-  dealers.forEach(function (d) {
-    d.nominee = nominees.find(function (n) { return n["DealerID"] === d["DealerID"]; }) || null;
-  });
-
-  try { cache.put("dealers_cache_v1", JSON.stringify(dealers), 30); } catch (e) { /* খুব বড় হলে বাদ */ }
+  const nomByDealer = {};
+  nominees.forEach(function (n) { if (!nomByDealer[n["DealerID"]]) nomByDealer[n["DealerID"]] = n; });
+  dealers.forEach(function (d) { d.nominee = nomByDealer[d["DealerID"]] || null; });
 
   return { success: true, dealers: dealers };
+}
+
+/* শুধু ডিলারের ছবি: { photos: { DealerID: dataURI } } — তালিকার থাম্বনেইলের জন্য */
+function listDealerPhotos(data) {
+  const perm = checkAgencyPermission(data.token);
+  if (!perm.ok) return { success: false, message: perm.message };
+
+  const sheet = getDealersSheet(getMasterSS());
+  const lastRow = sheet.getLastRow(), lastCol = sheet.getLastColumn();
+  if (lastRow < 2) return { success: true, photos: {} };
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  const iId = headers.indexOf("DealerID"), iPhoto = headers.indexOf("ডিলারের ছবি(URL)");
+  if (iId === -1 || iPhoto === -1) return { success: true, photos: {} };
+  const ids = sheet.getRange(2, iId + 1, lastRow - 1, 1).getValues();
+  const photos = sheet.getRange(2, iPhoto + 1, lastRow - 1, 1).getValues();
+  const out = {};
+  for (let i = 0; i < ids.length; i++) if (photos[i][0]) out[ids[i][0]] = photos[i][0];
+  return { success: true, photos: out };
 }
 
 function updateDealerInfo(data) {
@@ -364,18 +416,12 @@ function getDealerFullInfo(data) {
   if (!perm.ok) return { success: false, message: perm.message };
 
   const masterSS = getMasterSS();
-  const dealersSheet = getDealersSheet(masterSS);
-  const nomineeSheet = getSheet(masterSS, "DealerNominee");
-  const usersSheet = getSheet(masterSS, "Users");
-
-  const dealers = genericListRows(dealersSheet);
-  const dealer = dealers.find(function (d) { return d["DealerID"] === data.dealerId; });
+  const dealer = readOneRowObject(getDealersSheet(masterSS), "DealerID", data.dealerId);
   if (!dealer) return { success: false, message: "ডিলার পাওয়া যায়নি" };
 
-  const nominees = genericListRows(nomineeSheet);
-  const nominee = nominees.find(function (n) { return n["DealerID"] === data.dealerId; }) || null;
+  const nominee = readOneRowObject(getSheet(masterSS, "DealerNominee"), "DealerID", data.dealerId);
 
-  const users = genericListRows(usersSheet);
+  const users = genericListRows(getSheet(masterSS, "Users"));
   const adminUser = users.find(function (u) {
     return u["DealerID"] === data.dealerId && u["রোল"] === "Admin";
   }) || null;
